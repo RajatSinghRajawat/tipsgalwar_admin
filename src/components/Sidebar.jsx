@@ -34,10 +34,9 @@ const Sidebar = ({ isMobile = false, isOpen = false, onClose }) => {
                 <NavLink
                   to={item.path}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 group ${
-                      isActive
-                        ? 'bg-blue-50 text-blue-900 shadow-sm border-l-4 border-blue-600'
-                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                    `flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 group ${isActive
+                      ? 'bg-blue-50 text-blue-900 shadow-sm border-l-4 border-blue-600'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                     }`
                   }
                 >
@@ -97,10 +96,9 @@ const Sidebar = ({ isMobile = false, isOpen = false, onClose }) => {
                 to={item.path}
                 onClick={onClose}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 group ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-900 shadow-sm border-l-4 border-blue-600'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                  `flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 group ${isActive
+                    ? 'bg-blue-50 text-blue-900 shadow-sm border-l-4 border-blue-600'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                   }`
                 }
               >

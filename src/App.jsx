@@ -5,6 +5,7 @@ import Topbar from './components/Topbar';
 import BatchesPage from './pages/BatchesPage';
 import CoursesPage from './pages/CoursesPage';
 import EmployeesPage from './pages/EmployeesPage';
+import EmployeeDetailsPage from './pages/EmployeeDetailsPage';
 import StudentsPage from './pages/StudentsPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -42,6 +43,7 @@ function AppLayout() {
               <Route path="/courses" element={<CoursesPage />} />
               <Route path="/students" element={<StudentsPage />} />
               <Route path="/employees" element={<EmployeesPage />} />
+              <Route path="/employees/:id" element={<EmployeeDetailsPage />} />
               <Route path="/batches" element={<BatchesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
