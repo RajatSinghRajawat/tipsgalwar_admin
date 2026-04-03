@@ -1,28 +1,37 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  
+  --shadow-premium: 0 10px 30px -10px rgba(0, 0, 0, 0.08);
+  --shadow-active: 0 4px 20px -5px rgba(59, 130, 246, 0.25);
+}
+
 @layer base {
     body {
-        font-family: 'Poppins', sans-serif;
-        color: #444444;
-        line-height: 1.625;
-        font-size: 16px;
+        @apply bg-[#F8FAFC] text-slate-800 font-sans antialiased selection:bg-blue-100 selection:text-blue-900;
+        line-height: 1.6;
     }
 
     h1 {
-        @apply text-xl sm:text-2xl;
+        @apply text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl lg:text-4xl;
     }
 
     h2 {
-        @apply text-lg sm:text-xl;
+        @apply text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl;
     }
 
     h3 {
-        @apply text-base sm:text-lg;
+        @apply text-lg font-semibold tracking-tight text-slate-800;
     }
 }
 
 @layer utilities {
-    .content-spacing {
-        @apply p-4 sm:p-6 lg:p-8;
+    .content-card {
+        @apply rounded-3xl bg-white p-6 shadow-premium transition-all duration-300 hover:shadow-xl;
+    }
+
+    .glass {
+        @apply bg-white/70 backdrop-blur-xl border border-white/20;
     }
 }
