@@ -35,6 +35,35 @@ const EmployeeDetailsPage = () => {
     fetchEmployeeDetails();
   }, [id]);
 
+  const handleEdit = () => {
+    // Navigate to Employees list with the current ID in state to trigger edit mode
+    navigate('/employees', { state: { editId: id } });
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm('Are you sure you want to delete this employee record? This action cannot be undone.')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/delete/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          alert('Employee record deleted successfully.');
+          navigate('/employees');
+        } else {
+          const result = await response.json();
+          alert(result.message || 'Failed to delete record.');
+        }
+      } catch (error) {
+        console.error('Error deleting employee:', error);
+        alert('An error occurred while deleting the record.');
+      }
+    }
+  };
+
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     try {
@@ -120,10 +149,16 @@ const EmployeeDetailsPage = () => {
           </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/employees')} className="px-5 py-2.5 bg-blue-600 rounded-xl text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-2">
+          <button 
+            onClick={handleEdit}
+            className="px-5 py-2.5 bg-blue-600 rounded-xl text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-2"
+          >
             <FaEdit className="h-4 w-4" /> Edit Profile
           </button>
-          <button className="p-2.5 rounded-xl border border-rose-100 bg-white text-rose-500 hover:bg-rose-50 transition-all shadow-sm">
+          <button 
+            onClick={handleDelete}
+            className="p-2.5 rounded-xl border border-rose-100 bg-white text-rose-500 hover:bg-rose-50 transition-all shadow-sm"
+          >
             <FaTrash className="h-4 w-4" />
           </button>
         </div>

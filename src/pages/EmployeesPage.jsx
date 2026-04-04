@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FaPlus, FaSearch, FaEdit, FaTrash, FaTimes, FaUpload, 
@@ -11,6 +11,7 @@ const API_BASE_URL = 'http://localhost:3005/apis/employee';
 
 const EmployeesPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -18,6 +19,7 @@ const EmployeesPage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const initialFormState = {
     name: '',
@@ -67,6 +69,18 @@ const EmployeesPage = () => {
   useEffect(() => {
     fetchEmployees();
   }, []);
+
+  // Handle Edit navigation from Details Page
+  useEffect(() => {
+    if (location.state?.editId && employees.length > 0) {
+      const empToEdit = employees.find(e => e._id === location.state.editId);
+      if (empToEdit) {
+        openEditForm(empToEdit);
+        // Clear state to prevent re-triggering on refresh
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [location.state, employees]);
 
   // Helper to generate correct Image URLs (Handles old paths and new filenames)
   const getImageUrl = (imagePath) => {
@@ -165,12 +179,16 @@ const EmployeesPage = () => {
     });
 
     try {
+      setIsSubmitting(true);
       const url = isEditing ? `${API_BASE_URL}/update/${currentId}` : `${API_BASE_URL}/add`;
       const response = await fetch(url, {
         method: isEditing ? 'PUT' : 'POST',
         body: submitData
       });
+      
       if (response.ok) {
+        // Success feedback could be improved with a toast, using alert as fallback consistent with existing code
+        console.log('Success:', isEditing ? 'Updated' : 'Added');
         setView('list');
         fetchEmployees();
       } else {
@@ -179,6 +197,9 @@ const EmployeesPage = () => {
       }
     } catch (error) {
       console.error('Error submitting form:', error);
+      alert('Network error or server unavailable');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -350,13 +371,23 @@ const EmployeesPage = () => {
               </div>
               <div className="flex gap-3">
                  <button onClick={() => setView('list')} className="px-5 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-                 <button onClick={handleSubmit} className="px-6 py-2 bg-blue-600 rounded-lg text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-2">
-                    <FaCheckCircle className="h-4 w-4" /> {isEditing ? 'Save Changes' : 'Register Employee'}
+                 <button 
+                   type="submit" 
+                   form="employeeForm" 
+                   disabled={isSubmitting}
+                   className={`px-6 py-2 rounded-lg text-white text-sm font-bold transition-all shadow-sm flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}
+                 >
+                    {isSubmitting ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <FaCheckCircle className="h-4 w-4" />
+                    )} 
+                    {isSubmitting ? 'Syncing...' : isEditing ? 'Save Changes' : 'Register Employee'}
                   </button>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6 pb-24">
+            <form id="employeeForm" onSubmit={handleSubmit} className="space-y-6 pb-24">
               {/* Profile Photo Section */}
               <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm flex flex-col md:flex-row items-center gap-6">
                  <div className="relative group">
@@ -456,8 +487,17 @@ const EmployeesPage = () => {
               {/* Form Actions Footer */}
               <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-50">
                  <button type="button" onClick={() => setView('list')} className="px-6 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-                 <button type="submit" className="px-8 py-3 bg-blue-600 rounded-xl text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 flex items-center gap-2">
-                    <FaCheckCircle className="h-5 w-5" /> {isEditing ? 'Save Changes' : 'Register Employee'}
+                 <button 
+                   type="submit" 
+                   disabled={isSubmitting}
+                   className={`px-8 py-3 rounded-xl text-white text-sm font-bold transition-all shadow-lg flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 active:scale-95'}`}
+                 >
+                    {isSubmitting ? (
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <FaCheckCircle className="h-5 w-5" />
+                    )} 
+                    {isSubmitting ? 'Executing Sync...' : isEditing ? 'Save Changes' : 'Register Employee'}
                   </button>
               </div>
             </form>
