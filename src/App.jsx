@@ -4,10 +4,14 @@ import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import BatchesPage from './pages/BatchesPage';
 import CoursesPage from './pages/CoursesPage';
+import CourseDetailsPage from './pages/CourseDetailsPage';
 import EmployeesPage from './pages/EmployeesPage';
 import EmployeeDetailsPage from './pages/EmployeeDetailsPage';
 import StudentsPage from './pages/StudentsPage';
+import StudentDetailsPage from './pages/StudentDetailsPage';
 import SettingsPage from './pages/SettingsPage';
+import BatchDetailsPage from './pages/BatchDetailsPage';
+import { ToastProvider } from './components/Toast';
 
 function AppLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -41,10 +45,13 @@ function AppLayout() {
             <Routes>
               <Route path="/" element={<Navigate replace to="/courses" />} />
               <Route path="/courses" element={<CoursesPage />} />
+              <Route path="/courses/:id" element={<CourseDetailsPage />} />
               <Route path="/students" element={<StudentsPage />} />
+              <Route path="/students/:id" element={<StudentDetailsPage />} />
               <Route path="/employees" element={<EmployeesPage />} />
               <Route path="/employees/:id" element={<EmployeeDetailsPage />} />
               <Route path="/batches" element={<BatchesPage />} />
+              <Route path="/batches/:id" element={<BatchDetailsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </div>
@@ -57,7 +64,9 @@ function AppLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <AppLayout />
+      <ToastProvider>
+        <AppLayout />
+      </ToastProvider>
     </BrowserRouter>
   );
 }

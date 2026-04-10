@@ -6,12 +6,14 @@ import {
   FaUser, FaBriefcase, FaArrowLeft, FaCheckCircle, FaBuilding, FaEye,
   FaMapMarkerAlt
 } from 'react-icons/fa';
+import { useToast } from '../components/Toast';
 
 const API_BASE_URL = 'http://localhost:3005/apis/employee';
 
 const EmployeesPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const toast = useToast();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -187,13 +189,12 @@ const EmployeesPage = () => {
       });
       
       if (response.ok) {
-        // Success feedback could be improved with a toast, using alert as fallback consistent with existing code
-        console.log('Success:', isEditing ? 'Updated' : 'Added');
+        toast.success(isEditing ? 'Employee profile updated successfully!' : 'New employee registered successfully!');
         setView('list');
         fetchEmployees();
       } else {
         const result = await response.json();
-        alert(result.message || 'Operation failed');
+        toast.error(result.message || 'Operation failed. Please check your data.');
       }
     } catch (error) {
       console.error('Error submitting form:', error);
@@ -207,9 +208,15 @@ const EmployeesPage = () => {
     if (window.confirm('Are you sure you want to delete this employee?')) {
       try {
         const response = await fetch(`${API_BASE_URL}/delete/${id}`, { method: 'DELETE' });
-        if (response.ok) fetchEmployees();
+        if (response.ok) {
+          toast.success('Employee record deleted from system.');
+          fetchEmployees();
+        } else {
+          toast.error('Could not delete the record.');
+        }
       } catch (error) {
         console.error('Error deleting employee:', error);
+        toast.error('Network error during deletion.');
       }
     }
   };

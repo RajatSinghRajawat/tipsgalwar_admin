@@ -7,12 +7,14 @@ import {
   FaArrowRight, FaPrint, FaDownload, FaBriefcase, FaCreditCard,
   FaClock, FaShieldAlt, FaCheckCircle, FaGlobe, FaUniversity as FaBank
 } from 'react-icons/fa';
+import { useToast } from '../components/Toast';
 
 const API_BASE_URL = 'http://localhost:3005/apis/employee';
 
 const EmployeeDetailsPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,11 +53,11 @@ const EmployeeDetailsPage = () => {
         });
         
         if (response.ok) {
-          alert('Employee record deleted successfully.');
+          toast.success('Employee record deleted successfully.');
           navigate('/employees');
         } else {
           const result = await response.json();
-          alert(result.message || 'Failed to delete record.');
+          toast.error(result.message || 'Failed to delete record.');
         }
       } catch (error) {
         console.error('Error deleting employee:', error);
