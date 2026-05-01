@@ -8,9 +8,12 @@ import CourseDetailsPage from './pages/CourseDetailsPage';
 import EmployeesPage from './pages/EmployeesPage';
 import EmployeeDetailsPage from './pages/EmployeeDetailsPage';
 import StudentsPage from './pages/StudentsPage';
+import ApplyStudentsPage from './pages/ApplyStudentsPage';
 import StudentDetailsPage from './pages/StudentDetailsPage';
+import RegisteredUsersPage from './pages/RegisteredUsersPage';
 import SettingsPage from './pages/SettingsPage';
 import BatchDetailsPage from './pages/BatchDetailsPage';
+import ContactMessagesPage from './pages/ContactMessagesPage';
 import { ToastProvider } from './components/Toast';
 
 function AppLayout() {
@@ -47,11 +50,14 @@ function AppLayout() {
               <Route path="/courses" element={<CoursesPage />} />
               <Route path="/courses/:id" element={<CourseDetailsPage />} />
               <Route path="/students" element={<StudentsPage />} />
+              <Route path="/applied-students" element={<ApplyStudentsPage />} />
+              <Route path="/registered-users" element={<RegisteredUsersPage />} />
               <Route path="/students/:id" element={<StudentDetailsPage />} />
               <Route path="/employees" element={<EmployeesPage />} />
               <Route path="/employees/:id" element={<EmployeeDetailsPage />} />
               <Route path="/batches" element={<BatchesPage />} />
               <Route path="/batches/:id" element={<BatchDetailsPage />} />
+              <Route path="/contact-inquiries" element={<ContactMessagesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </div>

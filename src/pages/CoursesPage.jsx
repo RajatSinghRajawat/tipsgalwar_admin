@@ -31,6 +31,7 @@ const CoursesPage = () => {
     discount_Price: '',
     status: 'Active',
     date: '',
+    description: '',
     images: [] // Used internally for the file input
   };
 
@@ -413,6 +414,20 @@ const CoursesPage = () => {
                         <label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider font-bold">Official Launch Date</label>
                         <input required type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all" />
                     </div>
+                 </div>
+
+                 {/* Description Field */}
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider font-bold">Course Description / Overview</label>
+                    <textarea 
+                        required 
+                        name="description" 
+                        value={formData.description} 
+                        onChange={handleInputChange} 
+                        rows="4" 
+                        className="w-full rounded-lg border border-gray-200 p-3 text-sm font-medium outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all resize-none" 
+                        placeholder="Provide a compelling overview of the course curriculum and objectives..."
+                    ></textarea>
                  </div>
               </div>
 

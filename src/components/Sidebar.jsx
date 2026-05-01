@@ -4,9 +4,11 @@ import {
   FaChalkboardTeacher,
   FaUserGraduate,
   FaUsers,
+  FaClipboardList,
   FaCog,
   FaSignOutAlt,
-  FaTimes
+  FaTimes,
+  FaEnvelope
 } from 'react-icons/fa';
 import logo from './tips-g-logo.png';
 
@@ -14,8 +16,11 @@ const Sidebar = ({ isMobile = false, isOpen = false, onClose }) => {
   const menuItems = [
     { title: 'Courses', path: '/courses', icon: <FaBook /> },
     { title: 'Students', path: '/students', icon: <FaUserGraduate /> },
+    { title: 'Applied Students', path: '/applied-students', icon: <FaClipboardList /> },
+    { title: 'Registered Students', path: '/registered-users', icon: <FaUsers /> },
     { title: 'Employees', path: '/employees', icon: <FaChalkboardTeacher /> },
     { title: 'Batches', path: '/batches', icon: <FaUsers /> },
+    { title: 'Contact Inquiries', path: '/contact-inquiries', icon: <FaEnvelope /> },
     { title: 'Settings', path: '/settings', icon: <FaCog /> },
   ];
 
