@@ -22,6 +22,7 @@ const Sidebar = ({ isMobile = false, isOpen = false, onClose }) => {
     { title: 'Batches', path: '/batches', icon: <FaUsers /> },
     { title: 'Contact Inquiries', path: '/contact-inquiries', icon: <FaEnvelope /> },
     { title: 'Settings', path: '/settings', icon: <FaCog /> },
+    { title: 'Payments', path: '/payments', icon: <FaClipboardList /> },
   ];
 
   // Desktop Sidebar
