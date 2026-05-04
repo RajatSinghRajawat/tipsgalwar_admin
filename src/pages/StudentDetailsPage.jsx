@@ -54,7 +54,8 @@ const StudentDetailsPage = () => {
           toast.success('Student record deleted.');
           navigate('/students');
         } else {
-          toast.error('Record deletion failed.');
+          const errorResult = await response.json().catch(() => null);
+          toast.error(errorResult?.message || 'Record deletion failed.');
         }
       } catch (error) {
         console.error('Error deleting student:', error);

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FaPlus, FaSearch, FaEdit, FaTrash, FaTimes, FaUpload, 
   FaUser, FaBriefcase, FaArrowLeft, FaCheckCircle, FaGraduationCap, FaEye,
-  FaMapMarkerAlt, FaCreditCard, FaCalendarAlt, FaIdCard, FaShieldAlt
+  FaMapMarkerAlt, FaCreditCard, FaCalendarAlt, FaIdCard, FaShieldAlt, FaPhone, FaEnvelope
 } from 'react-icons/fa';
 import { useToast } from '../components/Toast';
 
@@ -24,6 +24,8 @@ const StudentsPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [courses, setCourses] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [viewModalTab, setViewModalTab] = useState('profile');
 
   const initialFormState = {
     course_Id: '',
@@ -223,7 +225,8 @@ const StudentsPage = () => {
           toast.success('Student record removed.');
           fetchStudents();
         } else {
-          toast.error('Could not delete student.');
+          const errorResult = await response.json().catch(() => null);
+          toast.error(errorResult?.message || 'Could not delete student.');
         }
       } catch (error) {
         console.error('Error deleting student:', error);
@@ -319,7 +322,7 @@ const StudentsPage = () => {
                       ))
                     ) : filteredStudents.length > 0 ? (
                       filteredStudents.map((student) => (
-                        <tr key={student._id} className="group hover:bg-blue-50/30 transition-all cursor-pointer" onClick={() => navigate(`/students/${student._id}`)}>
+                        <tr key={student._id} className="group hover:bg-blue-50/30 transition-all cursor-pointer" onClick={() => { setSelectedStudent(student); setViewModalTab('profile'); }}>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-4">
                               <div className="h-12 w-12 overflow-hidden rounded-xl bg-gray-50 border-2 border-white shadow-md group-hover:scale-105 transition-transform">
@@ -569,6 +572,200 @@ const StudentsPage = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Student Details Modal */}
+      {selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="rounded-3xl border border-gray-100 bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+          >
+            {/* Modal Header */}
+            <div className="sticky top-0 border-b border-gray-100 bg-white p-6 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setSelectedStudent(null)}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all"
+                >
+                  <FaArrowLeft className="h-4 w-4" />
+                  Back
+                </button>
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 overflow-hidden flex items-center justify-center text-white">
+                  {selectedStudent.image ? (
+                    <img src={getImageUrl(selectedStudent.image)} alt={selectedStudent.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <FaUser className="h-8 w-8" />
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{selectedStudent.name}</h2>
+                  <p className="text-sm text-gray-500">ID: {selectedStudent.enrollment_Id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedStudent(null)}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <FaTimes className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="border-b border-gray-100 bg-gray-50/50 px-6 flex gap-4 sticky top-[76px]">
+              <button
+                onClick={() => setViewModalTab('profile')}
+                className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
+                  viewModalTab === 'profile'
+                    ? 'text-blue-600 border-blue-600'
+                    : 'text-gray-600 border-transparent hover:text-gray-900'
+                }`}
+              >
+                Profile
+              </button>
+              <button
+                onClick={() => setViewModalTab('academic')}
+                className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
+                  viewModalTab === 'academic'
+                    ? 'text-blue-600 border-blue-600'
+                    : 'text-gray-600 border-transparent hover:text-gray-900'
+                }`}
+              >
+                Academic
+              </button>
+              <button
+                onClick={() => setViewModalTab('contact')}
+                className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
+                  viewModalTab === 'contact'
+                    ? 'text-blue-600 border-blue-600'
+                    : 'text-gray-600 border-transparent hover:text-gray-900'
+                }`}
+              >
+                Contact
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Profile Tab */}
+              {viewModalTab === 'profile' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.name}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date of Birth</label>
+                      <p className="text-sm font-semibold text-gray-900">{formatDate(selectedStudent.dob)}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Father's Name</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.father_Name}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Mother's Name</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.mother_Name}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Address</label>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {selectedStudent.address?.street}, {selectedStudent.address?.city}, {selectedStudent.address?.state} - {selectedStudent.address?.pincode}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Aadhar</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.aadhar}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">PAN Card</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.pan_Card}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Academic Tab */}
+              {viewModalTab === 'academic' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Course</label>
+                      <p className="text-sm font-semibold text-gray-900">{typeof selectedStudent.course_Id === 'object' ? selectedStudent.course_Id?.course_Name : selectedStudent.course_Id}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Batch</label>
+                      <p className="text-sm font-semibold text-gray-900">{typeof selectedStudent.batch_Id === 'object' ? selectedStudent.batch_Id?.batch_Name : selectedStudent.batch_Id}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Enrollment ID</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.enrollment_Id}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">EMI Type</label>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.emi}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Contact Tab */}
+              {viewModalTab === 'contact' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-blue-50 border border-blue-100">
+                    <FaPhone className="h-4 w-4 text-blue-600" />
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact Number</p>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.contact}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-emerald-50 border border-emerald-100">
+                    <FaEnvelope className="h-4 w-4 text-emerald-600" />
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Email Address</p>
+                      <p className="text-sm font-semibold text-gray-900">{selectedStudent.email}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="border-t border-gray-100 bg-gray-50/50 p-6 flex gap-3 justify-end sticky bottom-0">
+              <button
+                onClick={() => setSelectedStudent(null)}
+                className="px-5 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 font-semibold hover:bg-gray-50 transition-all"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  openEditForm(selectedStudent);
+                  setSelectedStudent(null);
+                }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-all"
+              >
+                <FaEdit className="h-4 w-4" />
+                Edit
+              </button>
+              <button
+                onClick={() => {
+                  handleDelete(selectedStudent._id);
+                  setSelectedStudent(null);
+                }}
+                className="px-5 py-2.5 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 transition-all"
+              >
+                <FaTrash className="h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };
