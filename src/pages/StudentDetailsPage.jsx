@@ -43,6 +43,15 @@ const StudentDetailsPage = () => {
     navigate('/students', { state: { editId: id } });
   };
 
+  const handleAddPayment = () => {
+    navigate('/payments', {
+      state: {
+        openCreateModal: true,
+        preselectedStudentId: student?._id || id
+      }
+    });
+  };
+
   const handleDelete = async () => {
     if (window.confirm('Are you sure you want to permanentely delete this student record?')) {
       try {
@@ -145,7 +154,13 @@ const StudentDetailsPage = () => {
             <p className="text-xs text-gray-500">Academic enrollment & personal dossier.</p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <button 
+            onClick={handleAddPayment}
+            className="px-5 py-2.5 bg-emerald-600 rounded-xl text-white text-sm font-bold hover:bg-emerald-700 transition-all shadow-sm flex items-center gap-2"
+          >
+            <FaCreditCard className="h-4 w-4" /> Add Payment
+          </button>
           <button 
             onClick={handleEdit}
             className="px-5 py-2.5 bg-blue-600 rounded-xl text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-2"
