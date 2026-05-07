@@ -7,8 +7,6 @@ import {
   FaChartLine, FaClock, FaBuilding, FaListUl, FaFilter
 } from 'react-icons/fa';
 import { useToast } from '../components/Toast';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 const PAYMENT_API_BASE_URL = 'http://localhost:3005/apis/payment';
 const STUDENT_API_BASE_URL = 'http://localhost:3005/apis/student';
@@ -64,6 +62,59 @@ const getStatusBadge = (status, isPaid) => {
   const text = isPaidStatus ? 'text-emerald-800' : status === 'failed' ? 'text-rose-800' : 'text-amber-800';
   return `${bg} ${text} px-2.5 py-0.5 rounded-full text-[11px] font-bold`;
 };
+
+const toTitleCase = (value) =>
+  String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const getReceiptStatusLabel = (payment) => {
+  if (payment?.is_paid || payment?.status === 'paid') return 'Paid';
+  return toTitleCase(payment?.status || 'pending');
+};
+
+const getReceiptNumber = (payment) => payment?.receipt || payment?._id?.slice(-8) || 'N/A';
+
+const getPaymentPlanLabel = (payment) => {
+  if (payment?.is_full_payment) return 'Full Payment';
+  return payment?.emi_type ? toTitleCase(payment.emi_type) : 'N/A';
+};
+
+const getCourseLabel = (student) => {
+  const course = student?.course_Id;
+  if (course && typeof course === 'object') return course.course_Name || 'N/A';
+  return course || 'N/A';
+};
+
+const getBatchLabel = (student) => {
+  const batch = student?.batch_Id;
+  if (batch && typeof batch === 'object') return batch.batch_Name || 'N/A';
+  return batch || 'N/A';
+};
+
+const getStudentAddress = (student) => {
+  const address = student?.address;
+  if (!address || typeof address !== 'object') return 'N/A';
+  const parts = [address.street, address.city, address.state, address.pincode].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'N/A';
+};
+
+const getNetAmount = (payment) => Math.max((Number(payment?.amount) || 0) - (Number(payment?.emi_discount) || 0), 0);
+
+const extractFilenameFromDisposition = (headerValue) => {
+  if (!headerValue) return null;
+  const utfMatch = headerValue.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) return decodeURIComponent(utfMatch[1]);
+  const basicMatch = headerValue.match(/filename="?([^"]+)"?/i);
+  return basicMatch?.[1] || null;
+};
+
+const ReceiptField = ({ label, value, mono = false, valueClassName = '' }) => (
+  <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
+    <p className={`mt-2 break-words text-sm font-semibold text-slate-900 ${mono ? 'font-mono text-[13px]' : ''} ${valueClassName}`}>{value}</p>
+  </div>
+);
 
 const generateEmiSchedule = (startDate, emiType, totalEmis) => {
   if (!startDate || !emiType || !totalEmis) return [];
@@ -296,10 +347,35 @@ const Payments = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const downloadReceipt = (payment) => {
-    if (!payment) return;
-    generateReceiptPDF(payment);
-    toast.success('Receipt generated');
+  const downloadReceipt = async (payment) => {
+    if (!payment?._id) return;
+
+    try {
+      const res = await fetch(`${PAYMENT_API_BASE_URL}/${payment._id}/receipt`);
+
+      if (!res.ok) {
+        const result = await readApiResponse(res);
+        throw new Error(getApiErrorMessage(result, 'Receipt download failed.'));
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const filename =
+        extractFilenameFromDisposition(res.headers.get('Content-Disposition')) ||
+        `Receipt_${payment.student_id?.enrollment_Id || payment._id}.pdf`;
+
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      toast.success('Receipt downloaded');
+    } catch (err) {
+      toast.error(err.message || 'Receipt download failed.');
+    }
   };
 
   const handleDeletePayment = async (id) => {
@@ -455,6 +531,14 @@ const Payments = () => {
           selectedPayment.total_emis || 4
         )
       : [];
+  const selectedStudent = selectedPayment?.student_id || {};
+  const selectedReceiptNumber = getReceiptNumber(selectedPayment);
+  const selectedNetAmount = getNetAmount(selectedPayment);
+  const selectedStatusLabel = getReceiptStatusLabel(selectedPayment);
+  const selectedPaymentPlan = getPaymentPlanLabel(selectedPayment);
+  const selectedCourse = getCourseLabel(selectedStudent);
+  const selectedBatch = getBatchLabel(selectedStudent);
+  const selectedAddress = getStudentAddress(selectedStudent);
 
   return (
     <div className="min-h-screen pb-12 overflow-x-hidden">
@@ -508,129 +592,174 @@ const Payments = () => {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-8 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+              className="mb-8 overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
             >
-              <div className="flex flex-wrap items-center justify-between bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 text-white">
-                <div className="flex items-center gap-3">
-                  <div className="bg-white/20 p-2 rounded-lg">
-                    <FaBuilding className="text-2xl" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold">TIPS GALWAR</h2>
-                    <p className="text-xs text-blue-100">Institute of Technical & Professional Studies</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs opacity-80">Payment Receipt</p>
-                  <p className="text-sm font-mono">Receipt No: {selectedPayment.receipt || selectedPayment._id?.slice(-8) || 'N/A'}</p>
-                  <p className="text-xs">Date: {formatDate(selectedPayment.created_at || selectedPayment.payment_date)}</p>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="grid md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <h3 className="flex items-center gap-2 border-b border-gray-100 pb-2 font-bold text-gray-900">
-                      <FaUserGraduate className="text-blue-600" /> Student Information
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div><span className="text-gray-500">Name:</span> <span className="font-medium text-gray-900">{selectedPayment.student_id?.name || 'N/A'}</span></div>
-                      <div><span className="text-gray-500">Enrollment ID:</span> <span className="font-medium text-gray-900">{selectedPayment.student_id?.enrollment_Id || 'N/A'}</span></div>
-                      <div><span className="text-gray-500">Email:</span> <span className="font-medium break-all text-gray-900">{selectedPayment.student_id?.email || 'N/A'}</span></div>
-                      <div><span className="text-gray-500">Contact:</span> <span className="font-medium text-gray-900">{selectedPayment.student_id?.contact || 'N/A'}</span></div>
-                      <div><span className="text-gray-500">Course:</span> <span className="font-medium text-gray-900">{selectedPayment.student_id?.course_Id?.course_Name || 'N/A'}</span></div>
-                      <div><span className="text-gray-500">Batch:</span> <span className="font-medium text-gray-900">{selectedPayment.student_id?.batch_Id?.batch_Name || 'N/A'}</span></div>
+              <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.22),_transparent_34%),linear-gradient(135deg,_#0f4cc9_0%,_#0f766e_100%)] px-6 py-6 text-white sm:px-8">
+                <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.06)_40%,transparent_100%)]" />
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-50">
+                      <FaReceipt className="text-[10px]" />
+                      Official Receipt Preview
+                    </div>
+                    <div className="flex items-start gap-4">
+                      <div className="rounded-2xl border border-white/15 bg-white/10 p-3 shadow-lg backdrop-blur-sm">
+                        <FaBuilding className="text-2xl" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-black tracking-[0.08em]">TIPS GALWAR</h2>
+                        <p className="mt-1 text-sm text-blue-50/90">Institute of Technical & Professional Studies</p>
+                        <p className="mt-2 max-w-xl text-sm leading-6 text-blue-50/85">
+                          Student payment acknowledgment formatted for professional PDF export and office record use.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-4">
-                    <h3 className="flex items-center gap-2 border-b border-gray-100 pb-2 font-bold text-gray-900">
-                      <FaReceipt className="text-blue-600" /> Payment Summary
-                    </h3>
-                    <div className="space-y-2 rounded-xl border border-gray-100 bg-gray-50/70 p-4 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">EMI Type:</span>
-                        <span className="font-medium text-gray-900">{selectedPayment.emi_type || (selectedPayment.is_full_payment ? 'Full Payment' : 'N/A')}</span>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:min-w-[360px]">
+                    <div className="rounded-3xl border border-white/15 bg-white/12 p-5 shadow-lg backdrop-blur-sm sm:col-span-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-100/90">Net Amount Received</p>
+                      <p className="mt-3 text-3xl font-black tracking-tight text-white">{formatCurrency(selectedNetAmount)}</p>
+                      <div className="mt-4 flex items-center justify-between text-xs text-blue-50/85">
+                        <span>Receipt No. {selectedReceiptNumber}</span>
+                        <span>{formatDate(selectedPayment.created_at || selectedPayment.payment_date)}</span>
                       </div>
-                      {!selectedPayment.is_full_payment && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">EMI Number:</span>
-                            <span className="font-medium text-gray-900">{selectedPayment.emi_number || 1} of {selectedPayment.total_emis || 4}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Amount Paid:</span>
-                            <span className="font-bold text-gray-900">{formatCurrency(selectedPayment.amount)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">EMI Discount:</span>
-                            <span className="text-emerald-700">- {formatCurrency(selectedPayment.emi_discount)}</span>
-                          </div>
-                          <div className="mt-2 flex justify-between border-t border-gray-200 pt-2">
-                            <span className="font-semibold text-gray-700">Net Amount:</span>
-                            <span className="text-lg font-bold text-gray-900">{formatCurrency((selectedPayment.amount || 0) - (selectedPayment.emi_discount || 0))}</span>
-                          </div>
-                        </>
-                      )}
-                      {selectedPayment.is_full_payment && (
-                        <div className="flex justify-between">
-                          <span className="font-semibold text-gray-700">Full Payment Amount:</span>
-                          <span className="text-lg font-bold text-gray-900">{formatCurrency(selectedPayment.amount)}</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-100/90">Status</p>
+                      <p className="mt-2 text-lg font-bold text-white">{selectedStatusLabel}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-100/90">Payment Plan</p>
+                      <p className="mt-2 text-lg font-bold text-white">{selectedPaymentPlan}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-[linear-gradient(180deg,_#f8fbff_0%,_#ffffff_22%,_#ffffff_100%)] p-6 sm:p-8">
+                <div className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="max-w-2xl">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Received With Thanks From</p>
+                      <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">{selectedStudent.name || 'N/A'}</h3>
+                      <p className="mt-3 text-sm leading-6 text-slate-600">
+                        This receipt confirms that the payment has been recorded against the student profile and is ready for download in official PDF format.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:min-w-[280px] sm:grid-cols-2">
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-600">Recorded On</p>
+                        <p className="mt-2 text-sm font-bold text-emerald-950">{formatDate(selectedPayment.payment_date || selectedPayment.created_at, true)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">Transaction Ref</p>
+                        <p className="mt-2 break-all font-mono text-[13px] font-bold text-slate-900">{selectedPayment.txn_id || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                    <ReceiptField label="Receipt Number" value={selectedReceiptNumber} mono />
+                    <ReceiptField label="Enrollment ID" value={selectedStudent.enrollment_Id || 'N/A'} mono />
+                    <ReceiptField label="Payment Status" value={selectedStatusLabel} valueClassName="text-emerald-700" />
+                    <ReceiptField label="Student Email" value={selectedStudent.email || 'N/A'} />
+                    <ReceiptField label="Course" value={selectedCourse} />
+                    <ReceiptField label="Batch" value={selectedBatch} />
+                    <ReceiptField label="Contact Number" value={selectedStudent.contact || 'N/A'} />
+                    <ReceiptField label="Address" value={selectedAddress} />
+                    <ReceiptField
+                      label="Installment"
+                      value={selectedPayment.is_full_payment ? 'Single payment' : `${selectedPayment.emi_number || 1} of ${selectedPayment.total_emis || 4}`}
+                    />
+                  </div>
+
+                  <div className="mt-6 grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+                    <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                        <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                          <FaReceipt className="text-blue-600" /> Payment Breakdown
+                        </h3>
+                        <span className={getStatusBadge(selectedPayment.status, selectedPayment.is_paid)}>{selectedStatusLabel}</span>
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Payment Plan</span>
+                          <span className="font-semibold text-slate-900">{selectedPaymentPlan}</span>
                         </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Transaction ID:</span>
-                        <span className="font-medium break-all text-gray-900">{selectedPayment.txn_id || 'N/A'}</span>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Gross Amount</span>
+                          <span className="font-semibold text-slate-900">{formatCurrency(selectedPayment.amount)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Discount Applied</span>
+                          <span className="font-semibold text-emerald-700">- {formatCurrency(selectedPayment.emi_discount || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 border-t border-dashed border-slate-300 pt-3">
+                          <span className="text-slate-700 font-semibold">Net Amount</span>
+                          <span className="text-xl font-black tracking-tight text-slate-950">{formatCurrency(selectedNetAmount)}</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Status:</span>
-                        <span className={getStatusBadge(selectedPayment.status, selectedPayment.is_paid)}>
-                          {selectedPayment.is_paid ? 'Paid' : selectedPayment.status}
-                        </span>
+                    </div>
+                    <div className="rounded-[24px] border border-blue-100 bg-[linear-gradient(160deg,_#eff6ff_0%,_#f8fafc_100%)] p-5 shadow-[0_12px_30px_rgba(37,99,235,0.08)]">
+                      <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                        <FaFileInvoiceDollar className="text-blue-600" /> Receipt Notes
+                      </h3>
+                      <div className="mt-4 space-y-3 text-sm text-slate-600">
+                        <p>This receipt is prepared for student records and accounts verification.</p>
+                        <p>Download the PDF to get the finalized official format with proper spacing and wrapped transaction details.</p>
+                        <p className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3 font-semibold text-slate-800">
+                          Generated reference time: {formatDate(new Date(), true)}
+                        </p>
                       </div>
                     </div>
                   </div>
                 </div>
                 {!selectedPayment.is_full_payment && selectedPayment.emi_duedate && (
-                  <div className="mt-6 grid md:grid-cols-2 gap-6">
-                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 shadow-sm">
+                  <div className="mt-6 grid gap-5 md:grid-cols-2">
+                    <div className="rounded-[24px] border border-indigo-100 bg-[linear-gradient(135deg,_#eef2ff_0%,_#e0f2fe_100%)] p-5 shadow-[0_14px_36px_rgba(79,70,229,0.12)]">
                       <h4 className="flex items-center gap-2 font-semibold text-indigo-700"><FaClock /> Next Payment Due</h4>
-                      <p className="mt-2 text-2xl font-bold text-indigo-900">{formatDate(selectedPayment.emi_duedate)}</p>
-                      <p className="text-sm text-indigo-600">EMI Number: {(selectedPayment.emi_number || 1) + 1} of {selectedPayment.total_emis || 4}</p>
-                      <p className="text-sm text-indigo-600">Amount Due: {formatCurrency(selectedPayment.amount)}</p>
+                      <p className="mt-3 text-3xl font-black tracking-tight text-indigo-950">{formatDate(selectedPayment.emi_duedate)}</p>
+                      <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                        <span className="rounded-full bg-white/80 px-3 py-1 font-semibold text-indigo-700">
+                          EMI {(selectedPayment.emi_number || 1) + 1} of {selectedPayment.total_emis || 4}
+                        </span>
+                        <span className="rounded-full bg-white/80 px-3 py-1 font-semibold text-indigo-700">
+                          Due {formatCurrency(selectedPayment.amount)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4 shadow-sm">
-                      <h4 className="flex items-center gap-2 font-semibold text-gray-800"><FaListUl /> Upcoming EMI Schedule</h4>
-                      <div className="mt-2 space-y-1 text-sm max-h-40 overflow-y-auto">
+                    <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                      <h4 className="flex items-center gap-2 font-semibold text-slate-800"><FaListUl /> Upcoming EMI Schedule</h4>
+                      <div className="mt-3 space-y-2 text-sm max-h-52 overflow-y-auto pr-1">
                         {emiSchedule.length > 0 ? (
                           emiSchedule.map((date, idx) => (
-                            <div key={idx} className="flex justify-between border-b border-gray-200 py-1">
-                              <span className="text-gray-500">EMI #{idx + 2}</span>
-                              <span className="text-gray-700">{formatDate(date)}</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(selectedPayment.amount)}</span>
+                            <div key={idx} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                              <span className="font-semibold text-slate-500">EMI #{idx + 2}</span>
+                              <span className="text-slate-700">{formatDate(date)}</span>
+                              <span className="font-bold text-slate-900">{formatCurrency(selectedPayment.amount)}</span>
                             </div>
                           ))
                         ) : (
-                          <p className="text-gray-500">No upcoming EMI schedule</p>
+                          <p className="text-slate-500">No upcoming EMI schedule</p>
                         )}
                       </div>
                     </div>
                   </div>
                 )}
-                <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-gray-100 pt-4">
+                <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-5">
                   <button
                     onClick={() => downloadReceipt(selectedPayment)}
-                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+                    className="flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-800"
                   >
                     Download Receipt (PDF)
                   </button>
                   <button
                     onClick={() => handleEditPayment(selectedPayment)}
-                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+                    className="flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
                   >
                     Edit Payment
                   </button>
                   <button
                     onClick={() => handleDeletePayment(selectedPayment._id)}
-                    className="flex items-center gap-2 rounded-xl bg-rose-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-600"
+                    className="flex items-center gap-2 rounded-2xl bg-rose-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-600"
                   >
                     Delete Payment
                   </button>
