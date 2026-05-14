@@ -1,5 +1,7 @@
 import React, { useEffect, useState, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   FaCalendarAlt, FaCheckCircle, FaChevronRight, FaCreditCard,
   FaEdit, FaFileInvoiceDollar, FaReceipt, FaRupeeSign,
@@ -7,6 +9,7 @@ import {
   FaChartLine, FaClock, FaBuilding, FaListUl, FaFilter
 } from 'react-icons/fa';
 import { useToast } from '../components/Toast';
+import instituteLogo from '../components/tips-g-logo.png';
 
 const PAYMENT_API_BASE_URL = 'http://localhost:3005/apis/payment';
 const STUDENT_API_BASE_URL = 'http://localhost:3005/apis/student';
@@ -101,6 +104,80 @@ const getStudentAddress = (student) => {
 
 const getNetAmount = (payment) => Math.max((Number(payment?.amount) || 0) - (Number(payment?.emi_discount) || 0), 0);
 
+const getCourseDuration = (student) => {
+  const course = student?.course_Id;
+  if (!course || typeof course !== 'object') return 'N/A';
+  return course.duration || course.course_Duration || course.course_duration || course.duration_months || 'N/A';
+};
+
+const getTrainerName = (student) => {
+  const batch = student?.batch_Id;
+  const course = student?.course_Id;
+  return (
+    batch?.trainer_name ||
+    batch?.trainer_Name ||
+    batch?.faculty_name ||
+    batch?.faculty_Name ||
+    course?.trainer_name ||
+    course?.trainer_Name ||
+    'N/A'
+  );
+};
+
+const getPaymentMethodLabel = (payment) =>
+  payment?.payment_method || payment?.payment_mode || payment?.method || 'Online';
+
+const getGstAmount = (payment) => {
+  const amount = Number(payment?.gst ?? payment?.gst_amount ?? payment?.tax_amount ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
+const getTotalPaidAmount = (payment) => {
+  const explicitAmount = Number(payment?.total_paid ?? payment?.totalPaid ?? payment?.paid_amount);
+  if (Number.isFinite(explicitAmount) && explicitAmount > 0) return explicitAmount;
+  return getNetAmount(payment) + getGstAmount(payment);
+};
+
+const loadImage = (src) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+
+const addReceiptSectionTable = (doc, title, rows, startY) => {
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(14, startY, 182, 9, 3, 3, 'F');
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, 18, startY + 6);
+
+  autoTable(doc, {
+    startY: startY + 12,
+    body: rows,
+    theme: 'grid',
+    styles: {
+      fontSize: 8.5,
+      cellPadding: 2.3,
+      textColor: [51, 65, 85],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2,
+      valign: 'middle',
+      overflow: 'linebreak',
+    },
+    columnStyles: {
+      0: { fontStyle: 'bold', textColor: [15, 23, 42], cellWidth: 46, fillColor: [248, 250, 252] },
+      1: { cellWidth: 136 },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  return doc.lastAutoTable.finalY;
+};
+
 const extractFilenameFromDisposition = (headerValue) => {
   if (!headerValue) return null;
   const utfMatch = headerValue.match(/filename\*=UTF-8''([^;]+)/i);
@@ -145,8 +222,156 @@ const generateEmiSchedule = (startDate, emiType, totalEmis) => {
 };
 
 // ---------- PERFECT PDF RECEIPT – NO CUTTING ----------
-const generateReceiptPDF = (payment) => {
+const generateReceiptPDF = async (payment) => {
   if (!payment) return;
+  {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const student = payment.student_id || {};
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const statusLabel = getReceiptStatusLabel(payment).toUpperCase();
+    const receiptNumber = getReceiptNumber(payment);
+    const totalPaidAmount = getTotalPaidAmount(payment);
+    const paymentMethod = getPaymentMethodLabel(payment);
+    const nextDueDate = payment?.is_full_payment ? 'N/A' : formatDate(payment?.emi_duedate);
+    let yPos = 16;
+    let logoImage = null;
+
+    try {
+      logoImage = await loadImage(instituteLogo);
+    } catch {
+      logoImage = null;
+    }
+
+    doc.setTextColor(241, 245, 249);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(42);
+    doc.text('TIPS GALWAR', pageWidth / 2, 176, { align: 'center', angle: -28 });
+
+    doc.setFillColor(15, 23, 42);
+    doc.roundedRect(margin, yPos, pageWidth - margin * 2, 34, 5, 5, 'F');
+
+    if (logoImage) {
+      doc.addImage(logoImage, 'PNG', margin + 4, yPos + 4, 17, 17);
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('TIPS GALWAR', logoImage ? margin + 25 : margin + 6, yPos + 10);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text('Institute of Technical & Professional Studies', logoImage ? margin + 25 : margin + 6, yPos + 16);
+    doc.text('Near Hope Circus, Alwar, Rajasthan 301001', pageWidth - margin - 4, yPos + 9, { align: 'right' });
+    doc.text('Phone: +91 98765 43210', pageWidth - margin - 4, yPos + 15, { align: 'right' });
+    doc.text('Email: admissions@tipsgalwar.edu.in', pageWidth - margin - 4, yPos + 21, { align: 'right' });
+    doc.text('Web: www.tipsgalwar.edu.in', pageWidth - margin - 4, yPos + 27, { align: 'right' });
+
+    yPos += 44;
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('STUDENT PAYMENT RECEIPT', pageWidth / 2, yPos, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Official fee acknowledgement for institute records', pageWidth / 2, yPos + 5, { align: 'center' });
+
+    yPos += 11;
+
+    doc.setFillColor(236, 253, 245);
+    doc.roundedRect(margin, yPos, 72, 21, 4, 4, 'F');
+    doc.setTextColor(5, 150, 105);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('TOTAL PAID', margin + 4, yPos + 6);
+    doc.setTextColor(6, 78, 59);
+    doc.setFontSize(17);
+    doc.text(formatCurrency(totalPaidAmount), margin + 4, yPos + 15);
+
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(margin + 76, yPos, 50, 21, 4, 4, 'F');
+    doc.setTextColor(29, 78, 216);
+    doc.setFontSize(8.5);
+    doc.text('RECEIPT NO.', margin + 80, yPos + 6);
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(10);
+    doc.text(receiptNumber, margin + 80, yPos + 15);
+
+    const statusFill = statusLabel === 'PAID' ? [220, 252, 231] : statusLabel === 'FAILED' ? [255, 228, 230] : [254, 243, 199];
+    const statusText = statusLabel === 'PAID' ? [22, 101, 52] : statusLabel === 'FAILED' ? [159, 18, 57] : [146, 64, 14];
+    doc.setFillColor(...statusFill);
+    doc.roundedRect(margin + 130, yPos, 66, 21, 4, 4, 'F');
+    doc.setTextColor(...statusText);
+    doc.setFontSize(8.5);
+    doc.text('PAYMENT STATUS', margin + 134, yPos + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(statusLabel, margin + 134, yPos + 15);
+
+    yPos += 29;
+
+    yPos = addReceiptSectionTable(doc, 'Student Information', [
+      ['Student Name', student?.name || 'N/A'],
+      ['Enrollment ID', student?.enrollment_Id || 'N/A'],
+      ['Email', student?.email || 'N/A'],
+      ['Mobile Number', student?.contact || 'N/A'],
+      ['Address', getStudentAddress(student)],
+    ], yPos);
+
+    yPos += 6;
+
+    yPos = addReceiptSectionTable(doc, 'Course Information', [
+      ['Course Name', getCourseLabel(student)],
+      ['Batch', getBatchLabel(student)],
+      ['Duration', getCourseDuration(student)],
+      ['Trainer Name', getTrainerName(student)],
+    ], yPos);
+
+    yPos += 6;
+
+    yPos = addReceiptSectionTable(doc, 'Payment Information', [
+      ['Receipt Number', receiptNumber],
+      ['Transaction ID', payment?.txn_id || 'N/A'],
+      ['Payment Method', paymentMethod],
+      ['EMI Type', getPaymentPlanLabel(payment)],
+      ['EMI Number', payment?.is_full_payment ? 'Single payment' : `${payment?.emi_number || 1} of ${payment?.total_emis || 4}`],
+      ['Amount', formatCurrency(payment?.amount)],
+      ['Discount', `- ${formatCurrency(payment?.emi_discount || 0)}`],
+      ['GST', formatCurrency(getGstAmount(payment))],
+      ['Total Paid', formatCurrency(totalPaidAmount)],
+      ['Payment Date', formatDate(payment?.payment_date || payment?.created_at, true)],
+      ['Next EMI Due Date', nextDueDate],
+      ['Payment Status', getReceiptStatusLabel(payment)],
+    ], yPos);
+
+    yPos += 10;
+
+    if (yPos > pageHeight - 42) {
+      doc.addPage();
+      yPos = 24;
+    }
+
+    doc.setDrawColor(203, 213, 225);
+    doc.line(margin + 6, yPos + 15, margin + 62, yPos + 15);
+    doc.line(pageWidth - margin - 62, yPos + 15, pageWidth - margin - 6, yPos + 15);
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('Student Signature', margin + 6, yPos + 21);
+    doc.text('Authorized Signature', pageWidth - margin - 62, yPos + 21);
+
+    doc.setFillColor(15, 23, 42);
+    doc.roundedRect(margin, pageHeight - 18, pageWidth - margin * 2, 10, 3, 3, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.text('Thank you for choosing our institute', pageWidth / 2, pageHeight - 11.5, { align: 'center' });
+
+    doc.save(`Receipt_${student?.enrollment_Id || payment?._id || 'payment'}.pdf`);
+    return;
+  }
   const doc = new jsPDF();
   const student = payment.student_id || {};
   const course = student.course_Id || {};
@@ -351,27 +576,7 @@ const Payments = () => {
     if (!payment?._id) return;
 
     try {
-      const res = await fetch(`${PAYMENT_API_BASE_URL}/${payment._id}/receipt`);
-
-      if (!res.ok) {
-        const result = await readApiResponse(res);
-        throw new Error(getApiErrorMessage(result, 'Receipt download failed.'));
-      }
-
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      const filename =
-        extractFilenameFromDisposition(res.headers.get('Content-Disposition')) ||
-        `Receipt_${payment.student_id?.enrollment_Id || payment._id}.pdf`;
-
-      anchor.href = downloadUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-
+      await generateReceiptPDF(payment);
       toast.success('Receipt downloaded');
     } catch (err) {
       toast.error(err.message || 'Receipt download failed.');
