@@ -8,7 +8,8 @@ import {
   FaCog,
   FaSignOutAlt,
   FaTimes,
-  FaEnvelope
+  FaEnvelope,
+  FaGraduationCap
 } from 'react-icons/fa';
 import logo from './tips-g-logo.png';
 
@@ -21,6 +22,7 @@ const Sidebar = ({ isMobile = false, isOpen = false, onClose }) => {
     { title: 'Employees', path: '/employees', icon: <FaChalkboardTeacher /> },
     { title: 'Batches', path: '/batches', icon: <FaUsers /> },
     { title: 'Contact Inquiries', path: '/contact-inquiries', icon: <FaEnvelope /> },
+    { title: 'Exam Results', path: '/exam-results', icon: <FaGraduationCap /> },
     { title: 'Settings', path: '/settings', icon: <FaCog /> },
   ];
 

@@ -14,6 +14,7 @@ import RegisteredUsersPage from './pages/RegisteredUsersPage';
 import SettingsPage from './pages/SettingsPage';
 import BatchDetailsPage from './pages/BatchDetailsPage';
 import ContactMessagesPage from './pages/ContactMessagesPage';
+import ExamResultsPage from './pages/ExamResultsPage';
 import { ToastProvider } from './components/Toast';
 
 function AppLayout() {
@@ -58,6 +59,7 @@ function AppLayout() {
               <Route path="/batches" element={<BatchesPage />} />
               <Route path="/batches/:id" element={<BatchDetailsPage />} />
               <Route path="/contact-inquiries" element={<ContactMessagesPage />} />
+              <Route path="/exam-results" element={<ExamResultsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </div>
