@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  FaPlus, FaSearch, FaEdit, FaTrash, FaTimes, FaUpload, 
+import {
+  FaPlus, FaSearch, FaEdit, FaTrash, FaTimes, FaUpload,
   FaUser, FaBriefcase, FaArrowLeft, FaCheckCircle, FaGraduationCap, FaEye,
-  FaMapMarkerAlt, FaCreditCard, FaCalendarAlt, FaIdCard, FaShieldAlt
+  FaMapMarkerAlt, FaCreditCard, FaCalendarAlt, FaIdCard, FaShieldAlt, FaPhone, FaEnvelope,
+  FaRupeeSign, FaReceipt
 } from 'react-icons/fa';
 import { useToast } from '../components/Toast';
 
 const API_BASE_URL = 'http://localhost:3005/apis/student';
+const PAYMENT_API_BASE_URL = 'http://localhost:3005/apis/payment';
+
+// Helper: Format currency (INR)
+const formatCurrency = (value) => {
+  const num = Number(value);
+  if (isNaN(num)) return '₹0';
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(num);
+};
 
 const StudentsPage = () => {
   const navigate = useNavigate();
@@ -17,13 +26,31 @@ const StudentsPage = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [view, setView] = useState('list'); // 'list' or 'form'
+  const [view, setView] = useState('list');
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [courses, setCourses] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [viewModalTab, setViewModalTab] = useState('profile');
+
+  // Payment Modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentStudent, setPaymentStudent] = useState(null);
+  const [courseFee, setCourseFee] = useState(null);
+  const [isLoadingFee, setIsLoadingFee] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: '',
+    emi_discount: '0',
+    emi_type: 'none',
+    payment_date: new Date().toISOString().split('T')[0],
+    txn_id: '',
+    receipt: '',
+    status: 'paid'
+  });
+  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState(false);
 
   const initialFormState = {
     course_Id: '',
@@ -50,15 +77,13 @@ const StudentsPage = () => {
 
   const [formData, setFormData] = useState(initialFormState);
 
-  // 1. GET ALL STUDENTS API
+  // Fetch students
   const fetchStudents = async () => {
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE_URL}/get`);
       const result = await response.json();
-      if (result.data) {
-        setStudents(result.data);
-      }
+      if (result.data) setStudents(result.data);
     } catch (error) {
       console.error('Error fetching students:', error);
       toast.error('Could not load student records.');
@@ -66,7 +91,7 @@ const StudentsPage = () => {
       setLoading(false);
     }
   };
-  
+
   const fetchAcademicData = async () => {
     try {
       const [coursesRes, batchesRes] = await Promise.all([
@@ -75,7 +100,6 @@ const StudentsPage = () => {
       ]);
       const coursesData = await coursesRes.json();
       const batchesData = await batchesRes.json();
-      
       if (coursesData.data) setCourses(coursesData.data);
       if (batchesData.data) setBatches(batchesData.data);
     } catch (error) {
@@ -88,30 +112,26 @@ const StudentsPage = () => {
     fetchAcademicData();
   }, []);
 
-  // Handle Edit navigation from Details Page
+  // Edit from details modal
   useEffect(() => {
     if (location.state?.editId && students.length > 0) {
       const studentToEdit = students.find(s => s._id === location.state.editId);
       if (studentToEdit) {
         openEditForm(studentToEdit);
-        // Clear state to prevent re-triggering on refresh
         window.history.replaceState({}, document.title);
       }
     }
   }, [location.state, students]);
 
-  // Helper to generate correct Image URLs
+  // Helper: image URL
   const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    if (typeof imagePath !== 'string') return null;
+    if (!imagePath || typeof imagePath !== 'string') return null;
     if (imagePath.startsWith('http')) return imagePath;
     if (imagePath.startsWith('data:')) return imagePath;
-
     const cleanPath = imagePath
       .replace(/^public[\/\\]Uploads[\/\\]/, '')
       .replace(/^public[\/\\]/, '')
       .replace(/^Uploads[\/\\]/, '');
-      
     return `http://localhost:3005/${cleanPath}`;
   };
 
@@ -119,10 +139,7 @@ const StudentsPage = () => {
     const { name, value } = e.target;
     if (name.includes('address.')) {
       const field = name.split('.')[1];
-      setFormData(prev => ({
-        ...prev,
-        address: { ...prev.address, [field]: value }
-      }));
+      setFormData(prev => ({ ...prev, address: { ...prev.address, [field]: value } }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -146,7 +163,7 @@ const StudentsPage = () => {
         return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
       }
       return new Date(dateStr).toISOString().split('T')[0];
-    } catch (e) {
+    } catch {
       return '';
     }
   };
@@ -163,14 +180,113 @@ const StudentsPage = () => {
       ...student,
       course_Id: typeof student.course_Id === 'object' ? student.course_Id?._id : student.course_Id,
       batch_Id: typeof student.batch_Id === 'object' ? student.batch_Id?._id : student.batch_Id,
-      password: '', // Don't pre-fill password for security
+      password: '',
       dob: parseDateForInput(student.dob),
-      image: null 
+      image: null
     });
     setCurrentId(student._id);
     setIsEditing(true);
     setImagePreview(student.image || null);
     setView('form');
+  };
+
+  // Payment modal handlers
+  const openPaymentModal = async (student) => {
+    setPaymentStudent(student);
+    setPaymentForm({
+      amount: '',
+      emi_discount: '0',
+      emi_type: 'none',
+      payment_date: new Date().toISOString().split('T')[0],
+      txn_id: '',
+      receipt: '',
+      status: 'paid'
+    });
+    setShowPaymentModal(true);
+    setCourseFee(null);
+    setIsLoadingFee(true);
+
+    try {
+      const res = await fetch('http://localhost:3005/apis/course/get');
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || 'Failed to fetch courses');
+      const coursesList = result.data || [];
+      const courseId = typeof student.course_Id === 'object' ? student.course_Id._id : student.course_Id;
+      const matchedCourse = coursesList.find(c => c._id === courseId);
+      let fee = 0;
+      if (matchedCourse) fee = matchedCourse.course_Price || matchedCourse.discount_Price || 0;
+      setCourseFee(fee);
+      setPaymentForm(prev => ({ ...prev, amount: fee.toString() }));
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not fetch course fee. Please enter amount manually.');
+    } finally {
+      setIsLoadingFee(false);
+    }
+  };
+
+  const handlePaymentInputChange = (e) => {
+    const { name, value } = e.target;
+    setPaymentForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Recalculate amount when EMI type changes
+  useEffect(() => {
+    if (courseFee === null || courseFee <= 0) return;
+    const emiType = paymentForm.emi_type;
+    let newAmount = courseFee;
+    if (emiType === 'monthly') newAmount = courseFee / 12;
+    else if (emiType === 'quarterly') newAmount = courseFee / 4;
+    else if (emiType === 'semester') newAmount = courseFee / 2;
+    else if (emiType === 'yearly') newAmount = courseFee;
+    else newAmount = courseFee; // 'none'
+    setPaymentForm(prev => ({ ...prev, amount: newAmount.toFixed(2) }));
+  }, [paymentForm.emi_type, courseFee]);
+
+  const submitPayment = async (e) => {
+    e.preventDefault();
+    if (!paymentStudent) return;
+    const amount = parseFloat(paymentForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Please enter a valid positive amount');
+      return;
+    }
+    const emiDiscount = parseFloat(paymentForm.emi_discount) || 0;
+    const isPaid = paymentForm.status === 'paid';
+    const statusValue = paymentForm.status === 'paid' ? 'paid' : 'pending';
+    const emiType = paymentForm.emi_type === 'none' ? null : paymentForm.emi_type;
+
+    const payload = {
+      student_id: paymentStudent._id,
+      amount: amount,
+      emi_discount: emiDiscount,
+      emi_type: emiType,
+      payment_date: paymentForm.payment_date,
+      txn_id: paymentForm.txn_id || null,
+      receipt: paymentForm.receipt || null,
+      is_paid: isPaid,
+      status: statusValue,
+      currency: 'INR'
+    };
+
+    try {
+      setIsPaymentSubmitting(true);
+      const response = await fetch(`${PAYMENT_API_BASE_URL}/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Payment creation failed');
+      toast.success(`Payment added for ${paymentStudent.name}`);
+      setShowPaymentModal(false);
+      setPaymentStudent(null);
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast.error(error.message);
+    } finally {
+      setIsPaymentSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -182,9 +298,7 @@ const StudentsPage = () => {
           submitData.append(`address[${subKey}]`, formData.address[subKey]);
         });
       } else if (key === 'image') {
-        if (formData.image) {
-          submitData.append('image', formData.image);
-        }
+        if (formData.image) submitData.append('image', formData.image);
       } else {
         if (key === 'password' && isEditing && !formData[key]) return;
         submitData.append(key, formData[key]);
@@ -198,17 +312,16 @@ const StudentsPage = () => {
         method: isEditing ? 'PUT' : 'POST',
         body: submitData
       });
-      
       if (response.ok) {
-        toast.success(isEditing ? 'Student record updated successfully!' : 'Student registered successfully!');
+        toast.success(isEditing ? 'Student record updated!' : 'Student registered!');
         setView('list');
         fetchStudents();
       } else {
         const result = await response.json();
-        toast.error(result.message || 'Operation failed. Please check inputs.');
+        toast.error(result.message || 'Operation failed.');
       }
     } catch (error) {
-      console.error('Error submitting form:', error);
+      console.error(error);
       toast.error('Network error or server unavailable');
     } finally {
       setIsSubmitting(false);
@@ -216,19 +329,19 @@ const StudentsPage = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this student record?')) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/delete/${id}`, { method: 'DELETE' });
-        if (response.ok) {
-          toast.success('Student record removed.');
-          fetchStudents();
-        } else {
-          toast.error('Could not delete student.');
-        }
-      } catch (error) {
-        console.error('Error deleting student:', error);
-        toast.error('Network error during deletion.');
+    if (!window.confirm('Delete this student record?')) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/delete/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        toast.success('Student deleted.');
+        fetchStudents();
+      } else {
+        const errorResult = await response.json().catch(() => null);
+        toast.error(errorResult?.message || 'Could not delete student.');
       }
+    } catch (error) {
+      console.error(error);
+      toast.error('Network error during deletion.');
     }
   };
 
@@ -244,12 +357,12 @@ const StudentsPage = () => {
       }
       if (isNaN(date.getTime())) return dateStr;
       return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    } catch (e) {
+    } catch {
       return dateStr;
     }
   };
 
-  const filteredStudents = students.filter(student => 
+  const filteredStudents = students.filter(student =>
     student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     student.enrollment_Id?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -265,22 +378,16 @@ const StudentsPage = () => {
             exit={{ opacity: 0, x: 20 }}
             className="space-y-6"
           >
-            {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900">Students Portal</h1>
                 <p className="mt-1 text-sm text-gray-500">Manage all student academic records in one place.</p>
               </div>
-              <button
-                onClick={openAddForm}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 transition-all"
-              >
-                <FaPlus className="h-4 w-4" />
-                Add Student
+              <button onClick={openAddForm} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 transition-all">
+                <FaPlus className="h-4 w-4" /> Add Student
               </button>
             </div>
 
-            {/* Stats */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm flex items-center gap-4">
                 <div className="rounded-lg bg-blue-50 p-3 text-blue-600"><FaGraduationCap className="h-5 w-5" /></div>
@@ -298,7 +405,6 @@ const StudentsPage = () => {
               </div>
             </div>
 
-            {/* Table */}
             <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden mt-8">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -307,29 +413,23 @@ const StudentsPage = () => {
                       <th className="px-6 py-4 font-semibold text-gray-900">Student Info</th>
                       <th className="px-6 py-4 font-semibold text-gray-900">Academic Details</th>
                       <th className="px-6 py-4 font-semibold text-gray-900">Parent Info</th>
-                      <th className="px-6 py-4 font-semibold text-gray-900 text-right">Contact</th>
+                      <th className="px-6 py-4 font-semibold text-gray-900">Contact</th>
+                      <th className="px-6 py-4 font-semibold text-gray-900 text-center">Add Payment</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {loading ? (
                       Array(3).fill(0).map((_, i) => (
-                        <tr key={i} className="animate-pulse">
-                          <td colSpan="5" className="px-6 py-8"><div className="h-5 bg-gray-100 rounded-lg w-full"></div></td>
-                        </tr>
+                        <tr key={i} className="animate-pulse"><td colSpan="5" className="px-6 py-8"><div className="h-5 bg-gray-100 rounded-lg w-full"></div></td></tr>
                       ))
                     ) : filteredStudents.length > 0 ? (
                       filteredStudents.map((student) => (
-                        <tr key={student._id} className="group hover:bg-blue-50/30 transition-all cursor-pointer" onClick={() => navigate(`/students/${student._id}`)}>
+                        <tr key={student._id} className="group hover:bg-blue-50/30 transition-all cursor-pointer" onClick={() => { setSelectedStudent(student); setViewModalTab('profile'); }}>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-4">
                               <div className="h-12 w-12 overflow-hidden rounded-xl bg-gray-50 border-2 border-white shadow-md group-hover:scale-105 transition-transform">
                                 {student.image ? (
-                                  <img 
-                                    src={getImageUrl(student.image)} 
-                                    alt={student.name} 
-                                    className="h-full w-full object-cover"
-                                    onError={(e) => { e.target.src = 'https://ui-avatars.com/api/?name=' + student.name; }}
-                                  />
+                                  <img src={getImageUrl(student.image)} alt={student.name} className="h-full w-full object-cover" onError={(e) => { e.target.src = 'https://ui-avatars.com/api/?name=' + student.name; }} />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center text-gray-200 bg-gray-50"><FaUser className="text-xl" /></div>
                                 )}
@@ -341,24 +441,29 @@ const StudentsPage = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                             <div className="flex flex-col gap-1">
-                                <span className="inline-block rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 uppercase tracking-widest border border-emerald-100 w-fit">
-                                  Course: {typeof student.course_Id === 'object' ? (student.course_Id?.course_Name || 'N/A') : (student.course_Id || 'N/A')}
-                                </span>
-                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1">Batch: {typeof student.batch_Id === 'object' ? (student.batch_Id?.batch_Name || 'N/A') : (student.batch_Id || 'N/A')}</span>
-                             </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-block rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 uppercase tracking-widest border border-emerald-100 w-fit">
+                                Course: {typeof student.course_Id === 'object' ? (student.course_Id?.course_Name || 'N/A') : (student.course_Id || 'N/A')}
+                              </span>
+                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1">Batch: {typeof student.batch_Id === 'object' ? (student.batch_Id?.batch_Name || 'N/A') : (student.batch_Id || 'N/A')}</span>
+                            </div>
                           </td>
                           <td className="px-6 py-4">
-                             <div className="flex flex-col">
-                                <span className="text-gray-900 font-semibold text-xs">F: {student.father_Name}</span>
-                                <span className="text-gray-400 text-[10px]">M: {student.mother_Name}</span>
-                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex flex-col items-end">
-                                <span className="text-gray-900 font-bold text-sm">{student.contact}</span>
-                                <span className="text-[10px] text-gray-400 font-medium truncate max-w-[150px]">{student.email}</span>
+                            <div className="flex flex-col">
+                              <span className="text-gray-900 font-semibold text-xs">F: {student.father_Name}</span>
+                              <span className="text-gray-400 text-[10px]">M: {student.mother_Name}</span>
                             </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span className="text-gray-900 font-bold text-sm">{student.contact}</span>
+                              <span className="text-[10px] text-gray-400 font-medium truncate max-w-[150px]">{student.email}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => openPaymentModal(student)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-all">
+                              <FaCreditCard className="h-3 w-3" /> Add Payment
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -380,193 +485,184 @@ const StudentsPage = () => {
           >
             <div className="mb-8 flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setView('list')}
-                  className="p-2.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all"
-                >
-                  <FaArrowLeft className="h-4 w-4" />
-                </button>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">{isEditing ? 'Edit Student Profile' : 'Student Enrollment'}</h2>
-                  <p className="text-xs text-gray-500">Fill in the official academic and personal details.</p>
-                </div>
+                <button onClick={() => setView('list')} className="p-2.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all"><FaArrowLeft className="h-4 w-4" /></button>
+                <div><h2 className="text-xl font-bold text-gray-900">{isEditing ? 'Edit Student Profile' : 'Student Enrollment'}</h2><p className="text-xs text-gray-500">Fill in the official academic and personal details.</p></div>
               </div>
               <div className="flex gap-3">
-                 <button onClick={() => setView('list')} className="px-5 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-                 <button 
-                   type="submit" 
-                   form="studentForm" 
-                   disabled={isSubmitting}
-                   className={`px-6 py-2 rounded-lg text-white text-sm font-bold transition-all shadow-sm flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}
-                 >
-                    {isSubmitting ? (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    ) : (
-                      <FaCheckCircle className="h-4 w-4" />
-                    )} 
-                    {isSubmitting ? 'Processing...' : isEditing ? 'Save Changes' : 'Enroll Student'}
-                  </button>
+                <button onClick={() => setView('list')} className="px-5 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
+                <button type="submit" form="studentForm" disabled={isSubmitting} className={`px-6 py-2 rounded-lg text-white text-sm font-bold transition-all shadow-sm flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}>
+                  {isSubmitting ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <FaCheckCircle className="h-4 w-4" />}
+                  {isSubmitting ? 'Processing...' : isEditing ? 'Save Changes' : 'Enroll Student'}
+                </button>
               </div>
             </div>
-
             <form id="studentForm" onSubmit={handleSubmit} className="space-y-6 pb-24">
-              {/* Profile Photo Section */}
               <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm flex flex-col md:flex-row items-center gap-6">
-                 <div className="relative group">
-                    <div className="h-32 w-32 rounded-lg bg-gray-50 overflow-hidden border-2 border-gray-100 shadow-sm relative">
-                        {imagePreview ? (
-                            <img src={imagePreview.startsWith('data:') ? imagePreview : getImageUrl(imagePreview)} className="h-full w-full object-cover" />
-                        ) : (
-                            <FaUser className="m-auto text-gray-200 text-5xl mt-10" />
-                        )}
-                        <label className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-all cursor-pointer">
-                            <FaUpload className="text-white opacity-0 group-hover:opacity-100 transition-opacity text-xl" />
-                            <input type="file" className="hidden" onChange={handleImageChange} accept="image/*" />
-                        </label>
-                    </div>
-                 </div>
-                 <div className="text-center md:text-left">
-                    <h3 className="text-lg font-bold text-gray-900 border-l-4 border-blue-600 pl-3 mb-1">Upload Identification Photo</h3>
-                    <p className="text-gray-500 text-xs">Student profile photo is required for ID cards.</p>
-                 </div>
+                <div className="relative group">
+                  <div className="h-32 w-32 rounded-lg bg-gray-50 overflow-hidden border-2 border-gray-100 shadow-sm relative">
+                    {imagePreview ? <img src={imagePreview.startsWith('data:') ? imagePreview : getImageUrl(imagePreview)} className="h-full w-full object-cover" /> : <FaUser className="m-auto text-gray-200 text-5xl mt-10" />}
+                    <label className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-all cursor-pointer">
+                      <FaUpload className="text-white opacity-0 group-hover:opacity-100 transition-opacity text-xl" />
+                      <input type="file" className="hidden" onChange={handleImageChange} accept="image/*" />
+                    </label>
+                  </div>
+                </div>
+                <div className="text-center md:text-left"><h3 className="text-lg font-bold text-gray-900 border-l-4 border-blue-600 pl-3 mb-1">Upload Identification Photo</h3><p className="text-gray-500 text-xs">Student profile photo is required for ID cards.</p></div>
               </div>
 
-              {/* Personal & Parent Section */}
-              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6 relative overflow-hidden transition-all hover:border-blue-100">
-                 <div className="flex items-center gap-3 border-b border-gray-50 pb-4">
-                    <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><FaUser /></div>
-                    <h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Personal & Parent Details</h4>
-                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Full Student Name</label><input required name="name" value={formData.name} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Date of Birth</label><input required type="date" name="dob" value={formData.dob} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
-                    
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Father's Name</label><input required name="father_Name" value={formData.father_Name} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Mother's Name</label><input required name="mother_Name" value={formData.mother_Name} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Contact Number</label><input required pattern="[0-9]{10}" name="contact" value={formData.contact} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
-                 </div>
+              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-gray-50 pb-4"><div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><FaUser /></div><h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Personal & Parent Details</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Full Student Name</label><input required name="name" value={formData.name} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Date of Birth</label><input required type="date" name="dob" value={formData.dob} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Father's Name</label><input required name="father_Name" value={formData.father_Name} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Mother's Name</label><input required name="mother_Name" value={formData.mother_Name} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Contact Number</label><input required pattern="[0-9]{10}" name="contact" value={formData.contact} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium" /></div>
+                </div>
               </div>
 
-              {/* Login Credentials */}
-              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6 transition-all hover:border-emerald-100">
-                 <div className="flex items-center gap-3 border-b border-gray-50 pb-4">
-                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><FaShieldAlt className="h-4 w-4" /></div>
-                    <h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Portal Access Credentials</h4>
-                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Email Address</label><input required type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium" /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Password</label><input required={!isEditing} type="password" name="password" value={formData.password} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium" placeholder={isEditing ? '••••••••' : 'Set portal password'} /></div>
-                 </div>
+              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-gray-50 pb-4"><div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><FaShieldAlt className="h-4 w-4" /></div><h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Portal Access Credentials</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Email Address</label><input required type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Password</label><input required={!isEditing} type="password" name="password" value={formData.password} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-medium" placeholder={isEditing ? '••••••••' : 'Set portal password'} /></div>
+                </div>
               </div>
 
-              {/* Academic Section */}
-              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6 transition-all hover:border-amber-100">
-                 <div className="flex items-center gap-3 border-b border-gray-50 pb-4">
-                    <div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><FaGraduationCap /></div>
-                    <h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Academic Enrollment</h4>
-                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Select Course</label>
-                      <select 
-                        required 
-                        name="course_Id" 
-                        value={formData.course_Id} 
-                        onChange={handleInputChange} 
-                        className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all font-medium"
-                      >
-                        <option value="">Choose Course</option>
-                        {courses.map(course => (
-                          <option key={course._id} value={course._id}>{course.course_Name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Select Batch</label>
-                      <select 
-                        required 
-                        name="batch_Id" 
-                        value={formData.batch_Id} 
-                        onChange={handleInputChange} 
-                        className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all font-medium"
-                      >
-                        <option value="">Choose Batch</option>
-                        {batches.map(batch => (
-                          <option key={batch._id} value={batch._id}>{batch.batch_Name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Enrollment ID</label>
-                      <input 
-                        required 
-                        name="enrollment_Id" 
-                        value={formData.enrollment_Id} 
-                        onChange={handleInputChange} 
-                        className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all font-medium" 
-                        placeholder="Enrollment ID" 
-                      />
-                    </div>
-                 </div>
+              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-gray-50 pb-4"><div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><FaGraduationCap /></div><h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Academic Enrollment</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Select Course</label><select required name="course_Id" value={formData.course_Id} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all font-medium"><option value="">Choose Course</option>{courses.map(course => (<option key={course._id} value={course._id}>{course.course_Name}</option>))}</select></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Select Batch</label><select required name="batch_Id" value={formData.batch_Id} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all font-medium"><option value="">Choose Batch</option>{batches.map(batch => (<option key={batch._id} value={batch._id}>{batch.batch_Name}</option>))}</select></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Enrollment ID</label><input required name="enrollment_Id" value={formData.enrollment_Id} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all font-medium" placeholder="Enrollment ID" /></div>
+                </div>
               </div>
 
-              {/* Identity & Fees Section */}
-              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6 transition-all hover:border-indigo-100">
-                 <div className="flex items-center gap-3 border-b border-gray-50 pb-4">
-                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><FaIdCard /></div>
-                    <h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Identity & Fees (EMI)</h4>
-                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Aadhar Number</label><input required pattern="[0-9]{12}" name="aadhar" value={formData.aadhar} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium" placeholder="12 Digit Aadhar" /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">PAN Card</label><input required name="pan_Card" value={formData.pan_Card} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium uppercase" placeholder="PAN Number" /></div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">EMI Frequency</label>
-                      <select required name="emi" value={formData.emi} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium">
-                        <option value="">Select Frequency</option>
-                        <option value="Monthly">Monthly</option>
-                        <option value="Quarterly">Quarterly</option>
-                        <option value="Semester">Semester</option>
-                        <option value="Yearly">Yearly</option>
-                      </select>
-                    </div>
-                 </div>
+              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-gray-50 pb-4"><div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><FaIdCard /></div><h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Identity & Fees (EMI)</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Aadhar Number</label><input required pattern="[0-9]{12}" name="aadhar" value={formData.aadhar} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium" placeholder="12 Digit Aadhar" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">PAN Card</label><input required name="pan_Card" value={formData.pan_Card} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium uppercase" placeholder="PAN Number" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">EMI Frequency</label><select required name="emi" value={formData.emi} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium"><option value="">Select Frequency</option><option value="Monthly">Monthly</option><option value="Quarterly">Quarterly</option><option value="Semester">Semester</option><option value="Yearly">Yearly</option></select></div>
+                </div>
               </div>
 
-              {/* Residential Block */}
-              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6 transition-all hover:border-amber-100">
-                 <div className="flex items-center gap-3 border-b border-gray-50 pb-4">
-                    <div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><FaMapMarkerAlt /></div>
-                    <h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Residential Address</h4>
-                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Street / Locality</label><input required name="address.street" value={formData.address.street} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">City</label><input required name="address.city" value={formData.address.city} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">State</label><input required name="address.state" value={formData.address.state} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div>
-                       <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">PIN Code</label><input required name="address.pincode" value={formData.address.pincode} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div>
-                    </div>
-                 </div>
+              <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-6">
+                <div className="flex items-center gap-3 border-b border-gray-50 pb-4"><div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><FaMapMarkerAlt /></div><h4 className="font-bold text-gray-900 text-sm uppercase tracking-tight">Residential Address</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1 md:col-span-2"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">Street / Locality</label><input required name="address.street" value={formData.address.street} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">City</label><input required name="address.city" value={formData.address.city} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div>
+                  <div className="grid grid-cols-2 gap-4"><div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">State</label><input required name="address.state" value={formData.address.state} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div><div className="space-y-1"><label className="text-[10px] font-bold text-gray-400 pl-1 uppercase tracking-wider">PIN Code</label><input required name="address.pincode" value={formData.address.pincode} onChange={handleInputChange} className="w-full rounded-lg border border-gray-200 p-2.5 text-sm font-medium outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 transition-all" /></div></div>
+                </div>
               </div>
 
-              {/* Form Actions Footer */}
               <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-50">
-                 <button type="button" onClick={() => setView('list')} className="px-6 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-                 <button 
-                   type="submit" 
-                   disabled={isSubmitting}
-                   className={`px-8 py-3 rounded-xl text-white text-sm font-bold transition-all shadow-lg flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 active:scale-95'}`}
-                 >
-                    {isSubmitting ? (
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    ) : (
-                      <FaCheckCircle className="h-5 w-5" />
-                    )} 
-                    {isSubmitting ? 'Enrolling...' : isEditing ? 'Save Changes' : 'Enroll Student'}
-                  </button>
+                <button type="button" onClick={() => setView('list')} className="px-6 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className={`px-8 py-3 rounded-xl text-white text-sm font-bold transition-all shadow-lg flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 active:scale-95'}`}>
+                  {isSubmitting ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <FaCheckCircle className="h-5 w-5" />}
+                  {isSubmitting ? 'Enrolling...' : isEditing ? 'Save Changes' : 'Enroll Student'}
+                </button>
               </div>
             </form>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Student Details Modal */}
+      {selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="rounded-3xl border border-gray-100 bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 border-b border-gray-100 bg-white p-6 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button onClick={() => setSelectedStudent(null)} className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all"><FaArrowLeft className="h-4 w-4" /> Back</button>
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 overflow-hidden flex items-center justify-center text-white">{selectedStudent.image ? <img src={getImageUrl(selectedStudent.image)} alt={selectedStudent.name} className="h-full w-full object-cover" /> : <FaUser className="h-8 w-8" />}</div>
+                <div><h2 className="text-2xl font-bold text-gray-900">{selectedStudent.name}</h2><p className="text-sm text-gray-500">ID: {selectedStudent.enrollment_Id}</p></div>
+              </div>
+              <button onClick={() => setSelectedStudent(null)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors"><FaTimes className="h-5 w-5 text-gray-400" /></button>
+            </div>
+            <div className="border-b border-gray-100 bg-gray-50/50 px-6 flex gap-4 sticky top-[76px]">
+              <button onClick={() => setViewModalTab('profile')} className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${viewModalTab === 'profile' ? 'text-blue-600 border-blue-600' : 'text-gray-600 border-transparent hover:text-gray-900'}`}>Profile</button>
+              <button onClick={() => setViewModalTab('academic')} className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${viewModalTab === 'academic' ? 'text-blue-600 border-blue-600' : 'text-gray-600 border-transparent hover:text-gray-900'}`}>Academic</button>
+              <button onClick={() => setViewModalTab('contact')} className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${viewModalTab === 'contact' ? 'text-blue-600 border-blue-600' : 'text-gray-600 border-transparent hover:text-gray-900'}`}>Contact</button>
+            </div>
+            <div className="p-6 space-y-6">
+              {viewModalTab === 'profile' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Full Name</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.name}</p></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Date of Birth</label><p className="text-sm font-semibold text-gray-900">{formatDate(selectedStudent.dob)}</p></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Father's Name</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.father_Name}</p></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Mother's Name</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.mother_Name}</p></div>
+                  </div>
+                  <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Address</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.address?.street}, {selectedStudent.address?.city}, {selectedStudent.address?.state} - {selectedStudent.address?.pincode}</p></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Aadhar</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.aadhar}</p></div><div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">PAN Card</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.pan_Card}</p></div></div>
+                </div>
+              )}
+              {viewModalTab === 'academic' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Course</label><p className="text-sm font-semibold text-gray-900">{typeof selectedStudent.course_Id === 'object' ? selectedStudent.course_Id?.course_Name : selectedStudent.course_Id}</p></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Batch</label><p className="text-sm font-semibold text-gray-900">{typeof selectedStudent.batch_Id === 'object' ? selectedStudent.batch_Id?.batch_Name : selectedStudent.batch_Id}</p></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Enrollment ID</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.enrollment_Id}</p></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">EMI Type</label><p className="text-sm font-semibold text-gray-900">{selectedStudent.emi}</p></div>
+                  </div>
+                </div>
+              )}
+              {viewModalTab === 'contact' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-blue-50 border border-blue-100"><FaPhone className="h-4 w-4 text-blue-600" /><div><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact Number</p><p className="text-sm font-semibold text-gray-900">{selectedStudent.contact}</p></div></div>
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-emerald-50 border border-emerald-100"><FaEnvelope className="h-4 w-4 text-emerald-600" /><div><p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Email Address</p><p className="text-sm font-semibold text-gray-900">{selectedStudent.email}</p></div></div>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-gray-100 bg-gray-50/50 p-6 flex gap-3 justify-end sticky bottom-0">
+              <button onClick={() => setSelectedStudent(null)} className="px-5 py-2.5 rounded-lg border border-gray-200 bg-white text-gray-700 font-semibold hover:bg-gray-50 transition-all">Close</button>
+              <button onClick={() => { openPaymentModal(selectedStudent); setSelectedStudent(null); }} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-all"><FaCreditCard className="h-4 w-4" /> Add Payment</button>
+              <button onClick={() => { openEditForm(selectedStudent); setSelectedStudent(null); }} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-all"><FaEdit className="h-4 w-4" /> Edit</button>
+              <button onClick={() => { handleDelete(selectedStudent._id); setSelectedStudent(null); }} className="px-5 py-2.5 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 transition-all"><FaTrash className="h-4 w-4" /></button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      <AnimatePresence>
+        {showPaymentModal && paymentStudent && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl border border-gray-100 bg-white shadow-xl">
+              <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-5 py-4">
+                <div className="flex items-center gap-2"><FaCreditCard className="text-indigo-600" /><h3 className="text-lg font-bold text-gray-900">Add Payment for {paymentStudent.name}</h3></div>
+                <button onClick={() => setShowPaymentModal(false)} className="rounded-full p-2 text-gray-500 transition hover:bg-gray-100"><FaTimes /></button>
+              </div>
+              <form onSubmit={submitPayment} className="p-5 space-y-5">
+                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+                  <p><strong>Student:</strong> {paymentStudent.name} ({paymentStudent.enrollment_Id})</p>
+                  <p><strong>Course:</strong> {typeof paymentStudent.course_Id === 'object' ? paymentStudent.course_Id?.course_Name : paymentStudent.course_Id}</p>
+                  <p><strong>Batch:</strong> {typeof paymentStudent.batch_Id === 'object' ? paymentStudent.batch_Id?.batch_Name : paymentStudent.batch_Id}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold uppercase text-gray-500">Amount * {isLoadingFee && <span className="ml-2 text-blue-500">(loading...)</span>}</label>
+                    <div className="relative">
+                      <FaRupeeSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
+                      <input type="number" name="amount" value={paymentForm.amount} onChange={handlePaymentInputChange} placeholder="Auto from course fee" className="w-full rounded-xl border border-gray-200 pl-9 pr-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" required step="0.01" min="0.01" />
+                    </div>
+                    {!isLoadingFee && courseFee !== null && <p className="mt-1 text-xs text-gray-400">Course fee: {formatCurrency(courseFee)} &nbsp;|&nbsp; EMI type: {paymentForm.emi_type === 'none' ? 'Full Payment' : paymentForm.emi_type}</p>}
+                  </div>
+                  <div><label className="mb-1 block text-xs font-bold uppercase text-gray-500">EMI Discount</label><input type="number" name="emi_discount" value={paymentForm.emi_discount} onChange={handlePaymentInputChange} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" step="0.01" min="0" /></div>
+                  <div><label className="mb-1 block text-xs font-bold uppercase text-gray-500">EMI Type</label><select name="emi_type" value={paymentForm.emi_type} onChange={handlePaymentInputChange} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"><option value="none">Full Payment (No EMI)</option><option value="monthly">Monthly (12 installments)</option><option value="quarterly">Quarterly (4 installments)</option><option value="semester">Semester (2 installments)</option><option value="yearly">Yearly (1 installment)</option></select></div>
+                  <div><label className="mb-1 block text-xs font-bold uppercase text-gray-500">Payment Date</label><input type="date" name="payment_date" value={paymentForm.payment_date} onChange={handlePaymentInputChange} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" /></div>
+                  <div><label className="mb-1 block text-xs font-bold uppercase text-gray-500">Transaction ID</label><input type="text" name="txn_id" value={paymentForm.txn_id} onChange={handlePaymentInputChange} placeholder="Optional" className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" /></div>
+                  <div><label className="mb-1 block text-xs font-bold uppercase text-gray-500">Receipt Number</label><input type="text" name="receipt" value={paymentForm.receipt} onChange={handlePaymentInputChange} placeholder="Auto-generated" className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" /></div>
+                  <div><label className="mb-1 block text-xs font-bold uppercase text-gray-500">Payment Status</label><select name="status" value={paymentForm.status} onChange={handlePaymentInputChange} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"><option value="paid">Paid</option><option value="pending">Pending</option></select></div>
+                </div>
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                  <button type="button" onClick={() => setShowPaymentModal(false)} className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={isPaymentSubmitting} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm text-white transition hover:bg-indigo-700 disabled:opacity-70">{isPaymentSubmitting ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <FaCheckCircle />}{isPaymentSubmitting ? 'Creating...' : 'Create Payment'}</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

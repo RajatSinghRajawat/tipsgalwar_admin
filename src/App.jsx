@@ -11,6 +11,7 @@ import StudentsPage from './pages/StudentsPage';
 import ApplyStudentsPage from './pages/ApplyStudentsPage';
 import StudentDetailsPage from './pages/StudentDetailsPage';
 import RegisteredUsersPage from './pages/RegisteredUsersPage';
+import Payments from "./pages/Payments";
 import SettingsPage from './pages/SettingsPage';
 import BatchDetailsPage from './pages/BatchDetailsPage';
 import ContactMessagesPage from './pages/ContactMessagesPage';
@@ -56,6 +57,7 @@ function AppLayout() {
               <Route path="/students/:id" element={<StudentDetailsPage />} />
               <Route path="/employees" element={<EmployeesPage />} />
               <Route path="/employees/:id" element={<EmployeeDetailsPage />} />
+              <Route path="/payments" element={<Payments />} />
               <Route path="/batches" element={<BatchesPage />} />
               <Route path="/batches/:id" element={<BatchDetailsPage />} />
               <Route path="/contact-inquiries" element={<ContactMessagesPage />} />

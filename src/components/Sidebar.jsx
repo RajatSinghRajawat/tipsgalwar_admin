@@ -24,6 +24,7 @@ const Sidebar = ({ isMobile = false, isOpen = false, onClose }) => {
     { title: 'Contact Inquiries', path: '/contact-inquiries', icon: <FaEnvelope /> },
     { title: 'Exam Results', path: '/exam-results', icon: <FaGraduationCap /> },
     { title: 'Settings', path: '/settings', icon: <FaCog /> },
+    { title: 'Payments', path: '/payments', icon: <FaClipboardList /> },
   ];
 
   // Desktop Sidebar
